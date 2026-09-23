@@ -1,5 +1,7 @@
 package com.example.keyboard2
 
+import android.content.ClipboardManager
+import android.content.Context
 import android.inputmethodservice.InputMethodService
 import android.view.KeyEvent
 import android.view.View
@@ -12,6 +14,8 @@ import androidx.lifecycle.ViewModelStore
 import androidx.lifecycle.ViewModelStoreOwner
 import androidx.lifecycle.setViewTreeLifecycleOwner
 import androidx.lifecycle.setViewTreeViewModelStoreOwner
+import androidx.room.Room
+import androidx.room.RoomDatabase
 import androidx.savedstate.SavedStateRegistry
 import androidx.savedstate.SavedStateRegistryController
 import androidx.savedstate.SavedStateRegistryOwner
@@ -19,6 +23,11 @@ import androidx.savedstate.setViewTreeSavedStateRegistryOwner
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.cancel
+import androidx.sqlite.db.SupportSQLiteDatabase
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.launch
+import java.io.BufferedReader
+import java.io.InputStreamReader
 
 class MyKeyboardService :
     InputMethodService(),
@@ -36,30 +45,84 @@ class MyKeyboardService :
 
     private val serviceScope = CoroutineScope(SupervisorJob())
     private lateinit var keyboardViewModel: KeyboardViewModel
+    private lateinit var learningDatabase: LearningDatabase
 
     override fun onCreate() {
         savedStateRegistryController.performRestore(null)
         lifecycleRegistry.currentState = Lifecycle.State.CREATED
         super.onCreate()
 
-        // IMPORTANT: InputMethodService.setInputView() wraps whatever view you give it
-        // inside internal framework decor before it becomes part of the window. Compose's
-        // recomposer looks for ViewTreeLifecycleOwner starting from the WINDOW ROOT, not
-        // from the ComposeView you create in onCreateInputView(). So the owners must be
-        // attached to the IME window's decorView here, not to the ComposeView itself -
-        // otherwise you get "ViewTreeLifecycleOwner not found" on every showSoftInput().
         window?.window?.decorView?.let { decorView ->
             decorView.setViewTreeLifecycleOwner(this)
             decorView.setViewTreeViewModelStoreOwner(this)
             decorView.setViewTreeSavedStateRegistryOwner(this)
         }
 
-        keyboardViewModel = KeyboardViewModel(serviceScope).apply {
-            onCommitText = { text -> currentInputConnection?.commitText(text, 1) }
-            onDeleteBackward = { currentInputConnection?.deleteSurroundingText(1, 0) }
+        // --- This is the "linking" step: build the local DB, wrap it, hand it to the ViewModel ---
+        learningDatabase = Room.databaseBuilder(
+            applicationContext,
+            LearningDatabase::class.java,
+            "keyboard_learning.db"
+        ).addCallback(object : RoomDatabase.Callback() {
+            override fun onCreate(db: SupportSQLiteDatabase) {
+                super.onCreate(db)
+                serviceScope.launch(Dispatchers.IO) {
+                    try {
+                        val inputStream = applicationContext.assets.open("CET_4+6_edited.txt")
+                        val reader = BufferedReader(InputStreamReader(inputStream))
+                        val now = System.currentTimeMillis()
+
+                        db.beginTransaction()
+                        try {
+                            reader.lineSequence().forEach { line ->
+                                val word = line.trim().lowercase()
+                                if (word.isNotBlank()) {
+                                    db.execSQL(
+                                        "INSERT OR IGNORE INTO word_stats (word, frequency, lastUsedEpochMs) VALUES (?, ?, ?)",
+                                        arrayOf(word, 10, now)
+                                    )
+                                }
+                            }
+                            db.setTransactionSuccessful()
+                        } finally {
+                            db.endTransaction()
+                            reader.close()
+                        }
+                    } catch (e: Exception) {
+                        e.printStackTrace()
+                    }
+                }
+            }
+        }).fallbackToDestructiveMigration().build()
+        val learningStore = LocalLearningStore(learningDatabase.dao())
+        val clipboardManager = getSystemService(Context.CLIPBOARD_SERVICE) as? ClipboardManager
+
+        keyboardViewModel = KeyboardViewModel(
+            serviceScope,
+            learningStore,
+            clipboardManager
+        ).apply {
+            onCommitText = {
+                text -> currentInputConnection?.commitText(
+                text, 1)
+            }
+            onDeleteBackward = {
+                currentInputConnection?.deleteSurroundingText(
+                    1, 0)
+            }
             onCommitEnter = {
-                currentInputConnection?.sendKeyEvent(KeyEvent(KeyEvent.ACTION_DOWN, KeyEvent.KEYCODE_ENTER))
-                currentInputConnection?.sendKeyEvent(KeyEvent(KeyEvent.ACTION_UP, KeyEvent.KEYCODE_ENTER))
+                currentInputConnection?.sendKeyEvent(
+                    KeyEvent(
+                        KeyEvent.ACTION_DOWN,
+                        KeyEvent.KEYCODE_ENTER
+                    )
+                )
+                currentInputConnection?.sendKeyEvent(
+                    KeyEvent(
+                        KeyEvent.ACTION_UP,
+                        KeyEvent.KEYCODE_ENTER
+                    )
+                )
             }
         }
     }
@@ -68,8 +131,6 @@ class MyKeyboardService :
         lifecycleRegistry.currentState = Lifecycle.State.STARTED
         return ComposeView(this).apply {
             setViewCompositionStrategy(ViewCompositionStrategy.DisposeOnDetachedFromWindow)
-            // No setViewTree*Owner calls here anymore - the decorView already carries them,
-            // and this ComposeView will resolve them by walking up to the window root.
             setContent { KeyboardScreen(keyboardViewModel) }
         }
     }
@@ -87,6 +148,7 @@ class MyKeyboardService :
     override fun onDestroy() {
         lifecycleRegistry.currentState = Lifecycle.State.DESTROYED
         serviceScope.cancel()
+        if (::learningDatabase.isInitialized) learningDatabase.close()
         super.onDestroy()
     }
 }

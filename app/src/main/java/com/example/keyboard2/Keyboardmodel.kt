@@ -8,7 +8,7 @@ data class KeyModel(
 )
 
 enum class KeyType{
-    CHAR,SHIFT,DEL,SYMBOLS,NUMBERS,SPACE,ENTER,BACK,PAGE_TOGGLE
+    CHAR,SHIFT,DEL,SYMBOLS,NUMBERS,SPACE,ENTER,BACK,PAGE_TOGGLE,NOOP
 }
 
 enum class KeyboardMode{
@@ -38,7 +38,7 @@ object KeyboardLayouts{
         KeyModel(label = "abc", flex = 1f),
         KeyModel(label = "Space", type = KeyType.SPACE, flex = 3f)
     ) + row4Letters + listOf(
-        KeyModel(label = "英/中", flex = 1.2f),
+        KeyModel(label = "英/中", type = KeyType.NOOP, flex = 1.2f),
         KeyModel(label = "Enter", type = KeyType.ENTER, flex = 1.4f)
     )
     val letters: List<List<KeyModel>> = listOf(row1, row2, row3, row4)
@@ -79,11 +79,11 @@ object KeyboardLayouts{
         KeyModel(label = ".")
     )
     val numpadBottomBar: List<KeyModel> = listOf(
-        KeyModel(label = "符号", type = KeyType.SYMBOLS, flex = 0.6f),
+        KeyModel(label = "符号", type = KeyType.SYMBOLS, flex = 0.65f),
         KeyModel(label = "返回", type = KeyType.BACK, flex = 1f),
         KeyModel(label = "0", flex = 1f),
         KeyModel(label = "Space", type = KeyType.SPACE, flex = 1f),
-        KeyModel(label = "搜索", type = KeyType.ENTER, flex = 0.6f)
+        KeyModel(label = "搜索", type = KeyType.ENTER, flex = 0.65f)
     )
 }
 
