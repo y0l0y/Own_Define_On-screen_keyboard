@@ -4,6 +4,7 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.room.*
 import kotlinx.coroutines.flow.Flow
 import java.util.PriorityQueue
+import kotlin.collections.emptyList
 import kotlin.comparisons.compareByDescending
 
 @Entity(
@@ -33,23 +34,30 @@ interface LearningDao {
     @Query("SELECT * FROM word_stats WHERE word LIKE :prefix || '%' AND frequency >= :minFrequency ORDER BY frequency DESC LIMIT :limit")
     suspend fun suggestByPrefix(prefix: String, minFrequency: Int, limit: Int): List<WordStat>
 
-    @Query("SELECT * FROM word_stats ORDER BY frequency DESC LIMIT 5")
-    suspend fun getTopWords(): List<WordStat>
+    @Query("SELECT * FROM word_stats WHERE word LIKE '%' || :fragment || '%' AND frequency >= :minFrequency ORDER BY frequency DESC LIMIT :limit")
+    suspend fun suggestContains(fragment: String, minFrequency: Int, limit: Int): List<WordStat>
+
+    @Query("SELECT * FROM word_stats ORDER BY frequency DESC LIMIT :limit")
+    suspend fun getTopWords(limit: Int = 10): List<WordStat>
 
     @Query("SELECT * FROM bigram_stats WHERE prevWord = :prevWord AND frequency >= :minFrequency ORDER BY frequency DESC LIMIT :limit")
     suspend fun suggestNextWordRanked(prevWord: String, minFrequency: Int, limit: Int): List<BigramStat>
 
     @Insert(onConflict = OnConflictStrategy.IGNORE)
     suspend fun insertWordIfAbsent(stat: WordStat): Long
+
     @Query("UPDATE word_stats SET frequency = frequency + 1, lastUsedEpochMs = :now WHERE word = :word")
     suspend fun incrementWord(word: String, now: Long)
+
     @Transaction
     suspend fun recordWord(word: String, now: Long = System.currentTimeMillis()) {
-        val insertedRowId = insertWordIfAbsent(WordStat(
-            word = word,
-            frequency = 1,
-            lastUsedEpochMs = now
-        ))
+        val insertedRowId = insertWordIfAbsent(
+            WordStat(
+                word = word,
+                frequency = 1,
+                lastUsedEpochMs = now
+            )
+        )
         if (insertedRowId == -1L) {
             incrementWord(word, now)
         }
@@ -63,7 +71,13 @@ interface LearningDao {
 
     @Transaction
     suspend fun recordBigram(prev: String, word: String) {
-        val insertedRowId = insertBigramIfAbsent(BigramStat(prevWord = prev, word = word, frequency = 1))
+        val insertedRowId = insertBigramIfAbsent(
+            BigramStat(
+                prevWord = prev,
+                word = word,
+                frequency = 1
+            )
+        )
         if (insertedRowId == -1L) {
             incrementBigram(prev, word)
         }
@@ -102,33 +116,28 @@ class LocalLearningStore(private val dao: LearningDao) {
         lastWord = clean
     }
 
-    suspend fun suggestions(currentPrefix: String, limit: Int = 8): List<String> {
-        val trusted = rankedCandidates(currentPrefix, minFrequency = 2, limit)
-        if (trusted.isNotEmpty()) return trusted
-        return rankedCandidates(currentPrefix, minFrequency = 1, limit)
+    suspend fun suggestions(currentPrefix: String, limit: Int = 20): List<String> {
+        if (currentPrefix.isBlank()) return blankPrefixSuggestions(limit)
+        rank(dao.suggestByPrefix(currentPrefix, minFrequency = 2, limit), limit)
+            .let { if (it.isNotEmpty()) return it }
+        rank(dao.suggestByPrefix(currentPrefix, minFrequency = 1, limit), limit)
+            .let { if (it.isNotEmpty()) return it }
+        rank(dao.suggestContains(currentPrefix, minFrequency = 1, limit), limit)
+            .let { if (it.isNotEmpty()) return it }
+        return dao.getTopWords(limit).map { it.word }
     }
 
-    private suspend fun rankedCandidates(prefix: String, minFrequency: Int, limit: Int): List<String> {
-        val heap = PriorityQueue<Pair<String, Int>>(compareByDescending { it.second })
+    private suspend fun blankPrefixSuggestions(limit: Int): List<String> {
+        val fromBigram = lastWord?.let { prev ->
+            rank(dao.suggestNextWordRanked(prev, minFrequency = 1, limit), limit)
+        } ?: emptyList()
+        if (fromBigram.isNotEmpty()) return fromBigram
+        return dao.getTopWords(limit).map { it.word }
+    }
 
-        if (prefix.isBlank()) {
-            var addedCount = 0
-            lastWord?.let { prev ->
-                dao.suggestNextWordRanked(prev, minFrequency, limit).forEach {
-                    heap.add(it.word to it.frequency)
-                    addedCount++
-                }
-            }
-            if (addedCount < limit) {
-                dao.getTopWords().forEach {
-                    heap.add(it.word to it.frequency)
-                }
-            }
-        } else {
-            dao.suggestByPrefix(prefix, minFrequency, limit).forEach {
-                heap.add(it.word to it.frequency)
-            }
-        }
+    private fun rank(entries: List<WordStat>, limit: Int): List<String> {
+        val heap = PriorityQueue<Pair<String, Int>>(compareByDescending { it.second })
+        entries.forEach { heap.add(it.word to it.frequency) }
         val seen = mutableSetOf<String>()
         val ranked = mutableListOf<String>()
         while (heap.isNotEmpty() && ranked.size < limit) {
@@ -137,6 +146,19 @@ class LocalLearningStore(private val dao: LearningDao) {
         }
         return ranked
     }
+
+    private fun rank(entries: List<BigramStat>, limit: Int): List<String> {
+        val heap = PriorityQueue<Pair<String, Int>>(compareByDescending { it.second })
+        entries.forEach { heap.add(it.word to it.frequency) }
+        val seen = mutableSetOf<String>()
+        val ranked = mutableListOf<String>()
+        while (heap.isNotEmpty() && ranked.size < limit) {
+            val (word, _) = heap.poll()
+            if (seen.add(word)) ranked.add(word)
+        }
+        return ranked
+    }
+
     suspend fun pruneBelow(threshold: Int = 1) {
         dao.deleteWordsBelow(threshold)
         dao.deleteBigramsBelow(threshold)

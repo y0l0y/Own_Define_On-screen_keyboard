@@ -1,13 +1,14 @@
 package com.example.keyboard2
 
 import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Job
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.launch
 import android.content.ClipboardManager
-import android.content.Context
 
+private const val CLIPBOARD_PREFIX = "\uD83D\uDCCB "
 class KeyboardViewModel (
     private val scope: CoroutineScope,
     private val learningStore: LocalLearningStore? = null,
@@ -22,8 +23,14 @@ class KeyboardViewModel (
 
     var onCommitText: ((String) -> Unit)? = null
     var onDeleteBackward: (() -> Unit)? = null
+    var onDeleteChars: ((Int) -> Unit)? = null
     var onCommitEnter: (() -> Unit)? = null
     private var currentWordPrefix = StringBuilder()
+    private var suggestionsJob: Job? =null
+
+    init {
+        updateSuggestions("")
+    }
 
     fun onKeyPress(key: KeyModel, isSwipeUp: Boolean) {
         val s = _state.value
@@ -82,6 +89,27 @@ class KeyboardViewModel (
     fun toggleExpandSuggestions(){
         _isExpandedSuggestions.value = !_isExpandedSuggestions.value
     }
+
+    fun selectSuggestion(word: String) {
+        val cleanWord = if (word.startsWith(CLIPBOARD_PREFIX)) word.removePrefix(CLIPBOARD_PREFIX) else word
+        if (currentWordPrefix.isNotEmpty()) {
+            val count = currentWordPrefix.length
+            val batchDelete = onDeleteChars
+            if (batchDelete != null) {
+                batchDelete(count)
+            } else {
+                repeat(count) {onDeleteBackward?.invoke()}
+            }
+        }
+        onCommitText?.invoke("$cleanWord")
+        if (!word.startsWith(CLIPBOARD_PREFIX)) {
+            scope.launch { learningStore?.onWordCommitted(cleanWord) }
+        }
+        currentWordPrefix.clear()
+        updateSuggestions("")
+        _isExpandedSuggestions.value = false
+    }
+
     private fun applyCase(label: String, s: KeyboardUiState): String =
         if (label.length == 1 && label[0].isLetter() && (s.isShift || s.isCapsLock)) {
             label.uppercase()
@@ -101,40 +129,28 @@ class KeyboardViewModel (
             else -> s.copy(isShift = !s.isShift)
         }
     }
-    fun getClipboardText(): String? {
+    private fun getClipboardText(): String? {
         val clipData = clipboardManager?.primaryClip
         if (clipData != null && clipData.itemCount > 0) {
             return clipData.getItemAt(0).text?.toString()
         }
         return null
     }
+
     private fun updateSuggestions(prefix: String) {
         if (learningStore == null) return
-        scope.launch {
+        suggestionsJob?.cancel()
+        suggestionsJob = scope.launch {
             val baseSuggestions = learningStore.suggestions(prefix).toMutableList()
 
             if (prefix.isBlank()) {
                 getClipboardText()?.let { clipText ->
-                    if (clipText.isNotBlank() && clipText.length < 30) {
-                        if (!baseSuggestions.contains(clipText)) {
-                            baseSuggestions.add(0, "\uD83D\uDCCB $clipText")
-                        }
+                    if (clipText.isNotBlank() && clipText.length < 30 && !baseSuggestions.contains(clipText)) {
+                        baseSuggestions.add(0, "$CLIPBOARD_PREFIX$clipText")
                     }
                 }
             }
             _suggestions.value = baseSuggestions
         }
-    }
-    fun selectSuggestion(word: String) {
-        val cleanWord = if (word.startsWith("\uD83D\uDCCB ")) word.removePrefix("\uD83D\uDCCB ") else word
-        onCommitText?.invoke("$cleanWord ")
-
-        if (!word.startsWith("\uD83D\uDCCB ")) {
-            scope.launch { learningStore?.onWordCommitted(cleanWord) }
-        }
-
-        currentWordPrefix.clear()
-        updateSuggestions("")
-        _isExpandedSuggestions.value = false
     }
 }

@@ -21,11 +21,7 @@ class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
 
-        val database = Room.databaseBuilder(
-            applicationContext,
-            LearningDatabase::class.java,
-            "keyboard_learning.db"
-        ).fallbackToDestructiveMigration().build()
+        val database = AppDatabaseProvider.get(applicationContext)
 
         val learningStore = LocalLearningStore(database.dao())
 

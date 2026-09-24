@@ -59,41 +59,8 @@ class MyKeyboardService :
         }
 
         // --- This is the "linking" step: build the local DB, wrap it, hand it to the ViewModel ---
-        learningDatabase = Room.databaseBuilder(
-            applicationContext,
-            LearningDatabase::class.java,
-            "keyboard_learning.db"
-        ).addCallback(object : RoomDatabase.Callback() {
-            override fun onCreate(db: SupportSQLiteDatabase) {
-                super.onCreate(db)
-                serviceScope.launch(Dispatchers.IO) {
-                    try {
-                        val inputStream = applicationContext.assets.open("CET_4+6_edited.txt")
-                        val reader = BufferedReader(InputStreamReader(inputStream))
-                        val now = System.currentTimeMillis()
+        learningDatabase = AppDatabaseProvider.get(applicationContext)
 
-                        db.beginTransaction()
-                        try {
-                            reader.lineSequence().forEach { line ->
-                                val word = line.trim().lowercase()
-                                if (word.isNotBlank()) {
-                                    db.execSQL(
-                                        "INSERT OR IGNORE INTO word_stats (word, frequency, lastUsedEpochMs) VALUES (?, ?, ?)",
-                                        arrayOf(word, 10, now)
-                                    )
-                                }
-                            }
-                            db.setTransactionSuccessful()
-                        } finally {
-                            db.endTransaction()
-                            reader.close()
-                        }
-                    } catch (e: Exception) {
-                        e.printStackTrace()
-                    }
-                }
-            }
-        }).fallbackToDestructiveMigration().build()
         val learningStore = LocalLearningStore(learningDatabase.dao())
         val clipboardManager = getSystemService(Context.CLIPBOARD_SERVICE) as? ClipboardManager
 
@@ -148,7 +115,6 @@ class MyKeyboardService :
     override fun onDestroy() {
         lifecycleRegistry.currentState = Lifecycle.State.DESTROYED
         serviceScope.cancel()
-        if (::learningDatabase.isInitialized) learningDatabase.close()
         super.onDestroy()
     }
 }
