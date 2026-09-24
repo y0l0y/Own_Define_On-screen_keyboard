@@ -14,8 +14,6 @@ import androidx.lifecycle.ViewModelStore
 import androidx.lifecycle.ViewModelStoreOwner
 import androidx.lifecycle.setViewTreeLifecycleOwner
 import androidx.lifecycle.setViewTreeViewModelStoreOwner
-import androidx.room.Room
-import androidx.room.RoomDatabase
 import androidx.savedstate.SavedStateRegistry
 import androidx.savedstate.SavedStateRegistryController
 import androidx.savedstate.SavedStateRegistryOwner
@@ -23,11 +21,6 @@ import androidx.savedstate.setViewTreeSavedStateRegistryOwner
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.cancel
-import androidx.sqlite.db.SupportSQLiteDatabase
-import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.launch
-import java.io.BufferedReader
-import java.io.InputStreamReader
 
 class MyKeyboardService :
     InputMethodService(),
