@@ -48,7 +48,10 @@ interface LearningDao {
     suspend fun incrementWord(word: String, now: Long)
 
     @Transaction
-    suspend fun recordWord(word: String, now: Long = System.currentTimeMillis()) {
+    suspend fun recordWord(
+        word: String,
+        now: Long = System.currentTimeMillis()
+    ) {
         val insertedRowId = insertWordIfAbsent(
             WordStat(
                 word = word,
@@ -68,7 +71,10 @@ interface LearningDao {
     suspend fun incrementBigram(prev: String, word: String)
 
     @Transaction
-    suspend fun recordBigram(prev: String, word: String) {
+    suspend fun recordBigram(
+        prev: String,
+        word: String
+    ) {
         val insertedRowId = insertBigramIfAbsent(
             BigramStat(
                 prevWord = prev,
@@ -114,44 +120,74 @@ class LocalLearningStore(private val dao: LearningDao) {
         lastWord = clean
     }
 
-    suspend fun suggestions(currentPrefix: String, limit: Int = 20): List<String> {
+    suspend fun suggestions(
+        currentPrefix: String,
+        limit: Int = 20
+    ): List<String> {
         if (currentPrefix.isBlank()) return blankPrefixSuggestions(limit)
-        rank(dao.suggestByPrefix(currentPrefix, minFrequency = 2, limit), limit)
-            .let { if (it.isNotEmpty()) return it }
-        rank(dao.suggestByPrefix(currentPrefix, minFrequency = 1, limit), limit)
-            .let { if (it.isNotEmpty()) return it }
-        rank(dao.suggestContains(currentPrefix, minFrequency = 1, limit), limit)
-            .let { if (it.isNotEmpty()) return it }
+        rankWords(
+            dao.suggestByPrefix(
+                currentPrefix,
+                minFrequency = 2,
+                limit),
+            limit
+        ).let { if (it.isNotEmpty()) return it }
+        rankWords(
+            dao.suggestByPrefix(
+                currentPrefix,
+                minFrequency = 1,
+                limit),
+            limit
+        ).let { if (it.isNotEmpty()) return it }
+        rankWords(
+            dao.suggestContains(
+                currentPrefix,
+                minFrequency = 1,
+                limit),
+            limit
+        ).let { if (it.isNotEmpty()) return it }
         return dao.getTopWords(limit).map { it.word }
     }
 
     private suspend fun blankPrefixSuggestions(limit: Int): List<String> {
         val fromBigram = lastWord?.let { prev ->
-            rank(dao.suggestNextWordRanked(prev, minFrequency = 1, limit), limit)
+            rankBigrams(
+                dao.suggestNextWordRanked(
+                    prev,
+                    minFrequency = 1,
+                    limit),
+                limit
+            )
         } ?: emptyList()
         if (fromBigram.isNotEmpty()) return fromBigram
         return dao.getTopWords(limit).map { it.word }
     }
 
-    private fun rank(entries: List<WordStat>, limit: Int): List<String> {
+    private fun rankWords(
+        entries: List<WordStat>,
+        limit: Int
+    ): List<String> {
         val heap = PriorityQueue<Pair<String, Int>>(compareByDescending { it.second })
         entries.forEach { heap.add(it.word to it.frequency) }
         val seen = mutableSetOf<String>()
         val ranked = mutableListOf<String>()
         while (heap.isNotEmpty() && ranked.size < limit) {
-            val (word, _) = heap.poll()
+            val (word, _) = heap.poll()!!
             if (seen.add(word)) ranked.add(word)
         }
         return ranked
     }
 
-    private fun rank(entries: List<BigramStat>, limit: Int): List<String> {
+    private fun rankBigrams(
+        entries: List<BigramStat>,
+        limit: Int
+    ): List<String> {
         val heap = PriorityQueue<Pair<String, Int>>(compareByDescending { it.second })
         entries.forEach { heap.add(it.word to it.frequency) }
         val seen = mutableSetOf<String>()
         val ranked = mutableListOf<String>()
         while (heap.isNotEmpty() && ranked.size < limit) {
-            val (word, _) = heap.poll()
+            val (word, _) = heap.poll()!!
             if (seen.add(word)) ranked.add(word)
         }
         return ranked

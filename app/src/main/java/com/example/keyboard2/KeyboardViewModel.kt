@@ -25,6 +25,7 @@ class KeyboardViewModel (
     var onDeleteBackward: (() -> Unit)? = null
     var onDeleteChars: ((Int) -> Unit)? = null
     var onCommitEnter: (() -> Unit)? = null
+    var onRequestHide: (() -> Unit)? = null
     private var currentWordPrefix = StringBuilder()
     private var suggestionsJob: Job? =null
 
@@ -32,7 +33,10 @@ class KeyboardViewModel (
         updateSuggestions("")
     }
 
-    fun onKeyPress(key: KeyModel, isSwipeUp: Boolean) {
+    fun onKeyPress(
+        key: KeyModel,
+        isSwipeUp: Boolean
+    ) {
         val s = _state.value
         when (key.type) {
             KeyType.CHAR -> {
@@ -89,6 +93,9 @@ class KeyboardViewModel (
     fun toggleExpandSuggestions(){
         _isExpandedSuggestions.value = !_isExpandedSuggestions.value
     }
+    fun hideKeyboard(){
+        onRequestHide?.invoke()
+    }
 
     fun selectSuggestion(word: String) {
         val cleanWord = if (word.startsWith(CLIPBOARD_PREFIX)) word.removePrefix(CLIPBOARD_PREFIX) else word
@@ -110,7 +117,10 @@ class KeyboardViewModel (
         _isExpandedSuggestions.value = false
     }
 
-    private fun applyCase(label: String, s: KeyboardUiState): String =
+    private fun applyCase(
+        label: String,
+        s: KeyboardUiState
+    ): String =
         if (label.length == 1 && label[0].isLetter() && (s.isShift || s.isCapsLock)) {
             label.uppercase()
         } else {

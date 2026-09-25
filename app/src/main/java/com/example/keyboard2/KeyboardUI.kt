@@ -1,5 +1,6 @@
 package com.example.keyboard2
 
+import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.gestures.animateScrollBy
 import androidx.compose.foundation.gestures.awaitEachGesture
@@ -14,6 +15,7 @@ import androidx.compose.foundation.lazy.grid.items
 import androidx.compose.foundation.lazy.grid.rememberLazyGridState
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
@@ -21,6 +23,7 @@ import androidx.compose.material3.Text
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.input.pointer.positionChange
@@ -49,7 +52,8 @@ fun KeyboardScreen(viewModel: KeyboardViewModel) {
                 ExpandedSuggestionsScreen(
                     suggestions = suggestions,
                     onSelect = { viewModel.selectSuggestion(it) },
-                    onCollapse = { viewModel.toggleExpandSuggestions() }
+                    onCollapse = { viewModel.toggleExpandSuggestions() },
+                    onHide = { viewModel.hideKeyboard() }
                 )
             }
             KeyboardMode.NUMPAD -> NumpadScreen(viewModel)
@@ -58,7 +62,8 @@ fun KeyboardScreen(viewModel: KeyboardViewModel) {
                     SuggestionBar(
                         suggestions = suggestions,
                         onSelect = { viewModel.selectSuggestion(it) },
-                        onExpand = { viewModel.toggleExpandSuggestions() }
+                        onExpand = { viewModel.toggleExpandSuggestions() },
+                        onHide = { viewModel.hideKeyboard() }
                     )
                 }
                 RowBasedScreen(state, viewModel)
@@ -67,13 +72,23 @@ fun KeyboardScreen(viewModel: KeyboardViewModel) {
     }
 }
 @Composable
-private fun SuggestionBar(suggestions: List<String>, onSelect: (String) -> Unit, onExpand: () -> Unit) {
+private fun SuggestionBar(
+    suggestions: List<String>,
+    onSelect: (String) -> Unit,
+    onExpand: () -> Unit,
+    onHide: () -> Unit
+) {
     Row(
-        modifier = Modifier.fillMaxWidth().height(SUGGESTION_BAR_HEIGHT).padding(horizontal = 8.dp),
+        modifier = Modifier
+            .fillMaxWidth()
+            .height(SUGGESTION_BAR_HEIGHT)
+            .padding(horizontal = 8.dp),
         verticalAlignment = Alignment.CenterVertically
     ) {
         Row(
-            modifier = Modifier.weight(1f).horizontalScroll(rememberScrollState()),
+            modifier = Modifier
+                .weight(1f)
+                .horizontalScroll(rememberScrollState()),
             horizontalArrangement = Arrangement.spacedBy(20.dp)
         ) {
             suggestions.forEach { word ->
@@ -84,27 +99,65 @@ private fun SuggestionBar(suggestions: List<String>, onSelect: (String) -> Unit,
                 )
             }
         }
+        if (suggestions.isNotEmpty()) {
+            Text(
+                text = "\u25BC",
+                fontSize = 12.sp,
+                modifier = Modifier
+                    .clickable { onExpand() }
+                    .padding(start = 12.dp, end = 12.dp)
+            )
+        }
+        HideKeyboardButton(
+            onClick = onHide,
+            modifier = Modifier.padding(start = 4.dp)
+        )
+
+    }
+}
+
+@Composable
+private fun HideKeyboardButton(
+    onClick: () -> Unit,
+    modifier: Modifier = Modifier
+) {
+    Box(
+        modifier = modifier
+            .size(26.dp)
+            .clip(CircleShape)
+            .background(MaterialTheme.colorScheme.surfaceVariant)
+            .clickable(onClick = onClick),
+        contentAlignment = Alignment.Center
+    ) {
         Text(
-            text = "\u25BC",
-            fontSize = 12.sp,
-            modifier = Modifier.clickable { onExpand() }.padding(start = 12.dp, end = 12.dp)
+            text = "\u2715",
+            fontSize = 13.sp,
+            color = MaterialTheme.colorScheme.onSurfaceVariant
         )
     }
 }
+
 @Composable
 private fun ExpandedSuggestionsScreen(
     suggestions: List<String>,
     onSelect: (String) -> Unit,
-    onCollapse: () -> Unit
+    onCollapse: () -> Unit,
+    onHide: () -> Unit
 ) {
     val gridState = rememberLazyGridState()
     val scope = rememberCoroutineScope()
 
-    Column(modifier = Modifier.fillMaxWidth().height(KEYBOARD_CONTENT_HEIGHT)) {
+    Column(
+        modifier = Modifier
+            .fillMaxWidth()
+            .height(KEYBOARD_CONTENT_HEIGHT)
+    ) {
         LazyVerticalGrid(
             columns = GridCells.Fixed(2),
             state = gridState,
-            modifier = Modifier.weight(1f).fillMaxWidth(),
+            modifier = Modifier
+                .weight(1f)
+                .fillMaxWidth(),
             contentPadding = PaddingValues(20.dp),
             verticalArrangement = Arrangement.spacedBy(28.dp),
             horizontalArrangement = Arrangement.spacedBy(16.dp)
@@ -118,7 +171,9 @@ private fun ExpandedSuggestionsScreen(
             }
         }
         Row(
-            modifier = Modifier.fillMaxWidth().padding(vertical = 12.dp, horizontal = 32.dp),
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(vertical = 12.dp, horizontal = 32.dp),
             horizontalArrangement = Arrangement.SpaceBetween,
             verticalAlignment = Alignment.CenterVertically
         ) {
@@ -141,11 +196,15 @@ private fun ExpandedSuggestionsScreen(
                 fontSize = 16.sp,
                 modifier = Modifier.clickable { onCollapse() }
             )
+            HideKeyboardButton(onClick = onHide)
         }
     }
 }
 @Composable
-private fun RowBasedScreen(state: KeyboardUiState, viewModel: KeyboardViewModel) {
+private fun RowBasedScreen(
+    state: KeyboardUiState,
+    viewModel: KeyboardViewModel
+) {
     Column(
         modifier = Modifier
             .fillMaxWidth()
@@ -161,7 +220,9 @@ private fun RowBasedScreen(state: KeyboardUiState, viewModel: KeyboardViewModel)
                     KeyButton(
                         key = key,
                         isShiftActive = state.isShift || state.isCapsLock,
-                        modifier = Modifier.weight(key.flex).height(KEY_ROW_HEIGHT),
+                        modifier = Modifier
+                            .weight(key.flex)
+                            .height(KEY_ROW_HEIGHT),
                         onTap = { viewModel.onKeyPress(key, isSwipeUp = false) },
                         onSwipeUp = { viewModel.onKeyPress(key, isSwipeUp = true) }
                     )
@@ -180,18 +241,24 @@ private fun NumpadScreen(viewModel: KeyboardViewModel) {
         verticalArrangement = Arrangement.spacedBy(4.dp)
     ) {
         Row(
-            modifier = Modifier.fillMaxWidth().height(NUMPAD_GRID_HEIGHT),
+            modifier = Modifier
+                .fillMaxWidth()
+                .height(NUMPAD_GRID_HEIGHT),
             horizontalArrangement = Arrangement.spacedBy(4.dp)
         ) {
             LazyColumn(
-                modifier = Modifier.weight(0.6f).fillMaxHeight(),
+                modifier = Modifier
+                    .weight(0.6f)
+                    .fillMaxHeight(),
                 verticalArrangement = Arrangement.spacedBy(ROW_SPACING)
             ) {
                 items(KeyboardLayouts.numpadLeftColumn) { key ->
                     KeyButton(
                         key = key,
                         isShiftActive = false,
-                        modifier = Modifier.fillMaxWidth().height(KEY_ROW_HEIGHT),
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .height(KEY_ROW_HEIGHT),
                         onTap = { viewModel.onKeyPress(key, isSwipeUp = false) },
                         onSwipeUp = {}
                     )
@@ -203,14 +270,18 @@ private fun NumpadScreen(viewModel: KeyboardViewModel) {
             ) {
                 KeyboardLayouts.numpadGrid.forEach { row ->
                     Row(
-                        modifier = Modifier.fillMaxWidth().height(KEY_ROW_HEIGHT),
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .height(KEY_ROW_HEIGHT),
                         horizontalArrangement = Arrangement.spacedBy(4.dp)
                     ) {
                         row.forEach { key ->
                             KeyButton(
                                 key = key,
                                 isShiftActive = false,
-                                modifier = Modifier.weight(1f).fillMaxHeight(),
+                                modifier = Modifier
+                                    .weight(1f)
+                                    .fillMaxHeight(),
                                 onTap = { viewModel.onKeyPress(key, isSwipeUp = false) },
                                 onSwipeUp = {}
                             )
@@ -226,7 +297,9 @@ private fun NumpadScreen(viewModel: KeyboardViewModel) {
                     KeyButton(
                         key = key,
                         isShiftActive = false,
-                        modifier = Modifier.fillMaxWidth().height(KEY_ROW_HEIGHT),
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .height(KEY_ROW_HEIGHT),
                         onTap = { viewModel.onKeyPress(key, isSwipeUp = false) },
                         onSwipeUp = {}
                     )
@@ -241,7 +314,9 @@ private fun NumpadScreen(viewModel: KeyboardViewModel) {
                 KeyButton(
                     key = key,
                     isShiftActive = false,
-                    modifier = Modifier.weight(key.flex).height(52.dp),
+                    modifier = Modifier
+                        .weight(key.flex)
+                        .height(52.dp),
                     onTap = { viewModel.onKeyPress(key, isSwipeUp = false) },
                     onSwipeUp = {}
                 )
@@ -290,14 +365,27 @@ private fun KeyButton(
         shape = RoundedCornerShape(8.dp),
         color = bg
     ) {
-        Box(contentAlignment = Alignment.Center, modifier = Modifier.fillMaxSize()) {
+        Box(
+            contentAlignment = Alignment.Center,
+            modifier = Modifier.fillMaxSize()
+        ) {
             if (key.altLabel != null) {
                 Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                    Text(key.altLabel, fontSize = 10.sp, color = Color.Gray)
-                    Text(displayLabel(key, isShiftActive), fontSize = 18.sp)
+                    Text(
+                        key.altLabel,
+                        fontSize = 10.sp,
+                        color = Color.Gray
+                    )
+                    Text(
+                        displayLabel(key, isShiftActive),
+                        fontSize = 18.sp
+                    )
                 }
             } else {
-                Text(displayLabel(key, isShiftActive), fontSize = 16.sp)
+                Text(
+                    displayLabel(key, isShiftActive),
+                    fontSize = 16.sp
+                )
             }
         }
     }

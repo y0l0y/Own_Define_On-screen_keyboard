@@ -84,6 +84,9 @@ class MyKeyboardService :
                     )
                 )
             }
+            onRequestHide = {
+                requestHideSelf(0)
+            }
         }
     }
 
@@ -95,7 +98,10 @@ class MyKeyboardService :
         }
     }
 
-    override fun onStartInputView(info: android.view.inputmethod.EditorInfo?, restarting: Boolean) {
+    override fun onStartInputView(
+        info: android.view.inputmethod.EditorInfo?,
+        restarting: Boolean
+    ) {
         super.onStartInputView(info, restarting)
         lifecycleRegistry.currentState = Lifecycle.State.RESUMED
     }
