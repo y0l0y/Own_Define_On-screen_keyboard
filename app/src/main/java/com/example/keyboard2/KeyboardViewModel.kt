@@ -128,6 +128,7 @@ class KeyboardViewModel (
         }
 
     private var lastShiftTapMs = 0L
+
     fun toggleShift(){
         val now = System.currentTimeMillis()
         val s = _state.value
